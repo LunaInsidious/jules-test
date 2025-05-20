@@ -99,22 +99,33 @@ impl Lexer {
 
     // Returns Some(String) if terminated, None if unterminated (hits EOF)
     fn read_string(&mut self) -> Option<String> {
-        let position = self.position + 1; // Start after the opening "
+        let mut value = String::new();
+        // Current self.ch is the opening quote.
+        // The loop will call read_char() to get the next character for processing.
+        
         loop {
-            self.read_char();
-            if self.ch == b'"' { // Closing quote found
-                return Some(self.input[position..self.position].to_string());
-            }
-            if self.ch == 0 { // EOF reached before closing quote
+            self.read_char(); // Read the next character from input.
+
+            if self.ch == b'"' { // End of string
+                return Some(value);
+            } else if self.ch == b'\\' { // Potential escape sequence
+                self.read_char(); // Read the character *after* the backslash
+                match self.ch {
+                    b'"'  => value.push('"'),
+                    b'\\' => value.push('\\'),
+                    0 => return None, // EOF during escape sequence (unterminated)
+                    // Any other character after \: treat \ and that char literally
+                    other_char => {
+                        value.push('\\');
+                        value.push(other_char as char);
+                    }
+                }
+            } else if self.ch == 0 { // EOF, but not a closing quote (and not part of escape)
                 return None; // Unterminated string
+            } else { // Normal character
+                value.push(self.ch as char);
             }
         }
-        // Note: The loop will only exit via the conditions above.
-        // If self.ch == b'"', it returns Some(...).
-        // If self.ch == 0, it returns None.
-        // So, the code after the loop is unreachable if logic is correct.
-        // However, to satisfy compiler, if loop could somehow exit otherwise:
-        // None 
     }
 
     fn read_number(&mut self) -> String {

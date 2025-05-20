@@ -310,6 +310,12 @@ impl Parser {
         }
         // self.next_token(); // Let statement does not consume the token after expression/semicolon
                            // This is handled by the main loop in parse_program or by parse_expression_statement
+        // After parse_expression, cur_token is the last token of value_expression.
+        if self.peek_token_is(Token::Semicolon) {
+            self.next_token(); // Consume ';'. cur_token is now ';'.
+        }
+        // Advance past the statement.
+        self.next_token(); 
 
         Some(Statement::LetStatement {
             token: let_token,
@@ -329,10 +335,14 @@ impl Parser {
         // self.next_token(); // Expression statement also does not consume the token after expression/semicolon
 
         match expression_opt {
-            Some(expression) => Some(Statement::ExpressionStatement {
-                token: stmt_token, 
-                expression,
-            }),
+            Some(expression) => {
+                // Statement parser should advance cur_token to the next token *after* this statement.
+                self.next_token(); 
+                Some(Statement::ExpressionStatement {
+                    token: stmt_token, 
+                    expression,
+                })
+            }
             None => None
         }
     }
@@ -349,11 +359,9 @@ impl Parser {
         };
         
         // After prefix parsing, cur_token is the last token of the prefix expression.
-        // We need to advance to the next token to check for infix operators.
-        self.next_token();
+        // The loop for infix parsing should check peek_token.
 
-
-        while !self.cur_token_is(Token::Semicolon) && precedence < self.peek_precedence() {
+        while !self.peek_token_is(Token::Semicolon) && precedence < self.peek_precedence() {
              // Check current token, not peek, because prefix parsing already advanced.
              // No, this is wrong. peek_precedence should be for peek_token.
              // The loop condition should be `precedence < self.peek_precedence()`
@@ -385,11 +393,14 @@ impl Parser {
             left_exp_opt = infix_fn_opt.unwrap()(self, left_exp_opt.unwrap()); 
                                                                     
             if left_exp_opt.is_none() { return None; } 
-
-            // After an infix operation, self.cur_token is the last token of the RHS.
-            // The next iteration of the loop will check self.peek_token.
-            // So we need to advance self.cur_token to the next one for the next iteration.
-            self.next_token(); // This was missing, crucial for Pratt parser.
+            
+            // After an infix operation, the infix_parse_fn (e.g. parse_dot_expression, parse_call_or_instantiation_expression)
+            // is responsible for consuming all tokens related to the infix operation, including the RHS and any closing tokens.
+            // The cur_token should be the last token of the expression parsed by the infix_fn.
+            // The loop in parse_expression will then call next_token() at the start of the next iteration IF it continues.
+            // So, the extra self.next_token() here was likely incorrect.
+            // Removing it. The main loop of parse_expression or its callers should handle advancing.
+            // self.next_token(); // REMOVED THIS LINE
         }
         left_exp_opt
     }

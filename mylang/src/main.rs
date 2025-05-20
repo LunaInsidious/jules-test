@@ -2,14 +2,16 @@ use mylang::lexer::Lexer;
 use mylang::parser::Parser;
 use mylang::evaluator::eval;
 use mylang::environment::Environment;
-use mylang::object::Object; // For inspecting the object
+// use mylang::object::Object; // This import is unused as object is inspected via eval's return
 use std::io::{self, Write}; // For input/output
+use std::rc::Rc;      // For Rc
+use std::cell::RefCell; // For RefCell
 
 fn main() {
     println!("Mylang REPL (v0.1.0)");
     println!("Type 'exit' or press Ctrl-D to exit.");
 
-    let mut env = Environment::new();
+    let env = Rc::new(RefCell::new(Environment::new())); // Changed to Rc<RefCell<Environment>>
 
     loop {
         print!(">> ");
@@ -47,7 +49,7 @@ fn main() {
                 }
 
                 // ast::Program implements ast::Node, so we can Box it.
-                match eval(Box::new(program_node), &mut env) {
+                match eval(Box::new(program_node), env.clone()) { // Pass env.clone() (clones Rc)
                     Some(evaluated_object) => {
                         // Print the inspected object, unless it's specifically Null from a let statement
                         // (or other statements that shouldn't print anything in a REPL).

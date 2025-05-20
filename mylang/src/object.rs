@@ -2,7 +2,7 @@ use std::fmt;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
-use crate::ast::{Identifier, BlockStatement}; 
+use crate::ast::{Identifier, BlockStatement, Node}; // Added Node
 use crate::environment::Environment;      
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -41,15 +41,15 @@ pub struct Integer {
 pub struct FunctionObject {
     pub parameters: Vec<Identifier>,
     pub body: BlockStatement,
-    pub env: Environment, 
-    pub name: Option<String>, // Added field for function/method name
+    pub env: Rc<RefCell<Environment>>, // Changed to Rc<RefCell<Environment>>
+    pub name: Option<String>, 
 }
 impl PartialEq for FunctionObject {
     fn eq(&self, other: &Self) -> bool {
         self.parameters == other.parameters && 
         self.body.string() == other.body.string() &&
-        self.name == other.name
-        // Environment comparison is complex and usually not done for function equality.
+        self.name == other.name &&
+        Rc::ptr_eq(&self.env, &other.env) // Compare environments by Rc pointer equality
     }
 }
 

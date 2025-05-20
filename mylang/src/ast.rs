@@ -17,7 +17,7 @@ pub struct Identifier {
 
 impl Node for Identifier {
     fn token_literal(&self) -> String {
-        self.value.clone()
+        self.token.to_string() // Updated
     }
     fn string(&self) -> String {
         self.value.clone()
@@ -33,7 +33,7 @@ pub struct BlockStatement {
 
 impl Node for BlockStatement {
     fn token_literal(&self) -> String {
-        self.token.to_string() // Assuming Token has a to_string or similar
+        self.token.to_string() 
     }
     fn string(&self) -> String {
         let mut out = String::new();
@@ -56,11 +56,11 @@ pub struct FunctionLiteral {
 
 impl Node for FunctionLiteral {
     fn token_literal(&self) -> String {
-        self.token.to_string()
+        self.token.to_string() // Updated
     }
     fn string(&self) -> String {
         let mut out = String::new();
-        out.push_str(self.token_literal().as_str());
+        out.push_str(self.token_literal().as_str()); // Uses the updated token_literal
         if let Some(name) = &self.name {
             out.push_str(&format!("<{}>", name));
         }
@@ -77,39 +77,35 @@ impl Node for FunctionLiteral {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Expression {
-    Identifier(Identifier),
+    Identifier(Identifier), // Identifier itself holds a token
     IntegerLiteral { token: Token, value: i64 },
-    FunctionLiteral(FunctionLiteral), // Added
-    ClassInstantiation { // Added
+    FunctionLiteral(FunctionLiteral), // FunctionLiteral itself holds a token
+    ClassInstantiation { 
         token: Token, // Identifier token of the class name
-        name: Identifier, // Class name
+        name: Identifier, 
         arguments: Vec<Expression>, 
     },
-    MethodCall { // Added
+    MethodCall { 
         token: Token, // '.' token
-        object: Box<Expression>, // Receiver object
-        name: Identifier, // Method name
+        object: Box<Expression>, 
+        name: Identifier, 
         arguments: Vec<Expression>, 
     },
-    StringLiteral { // Added
+    StringLiteral { 
         token: Token, // Token::String
         value: String,
     },
-    // TODO: Add other expression types like PrefixExpression, InfixExpression
 }
 
 impl Node for Expression {
     fn token_literal(&self) -> String {
         match self {
-            Expression::Identifier(ident) => ident.token_literal(),
-            Expression::IntegerLiteral { token, .. } => match token {
-                Token::Int(val) => val.clone(),
-                _ => panic!("Expected Token::Int for IntegerLiteral, got {:?}", token),
-            },
-            Expression::FunctionLiteral(fl) => fl.token_literal(),
-            Expression::ClassInstantiation { token, .. } => token.to_string(),
-            Expression::MethodCall { token, .. } => token.to_string(),
-            Expression::StringLiteral { token, .. } => token.to_string(), // Assuming Token::String can be stringified
+            Expression::Identifier(ident) => ident.token.to_string(), // Updated: access token from Identifier
+            Expression::IntegerLiteral { token, .. } => token.to_string(), // Updated
+            Expression::FunctionLiteral(fl) => fl.token.to_string(), // Updated: access token from FunctionLiteral
+            Expression::ClassInstantiation { token, .. } => token.to_string(), // Updated
+            Expression::MethodCall { token, .. } => token.to_string(), // Updated
+            Expression::StringLiteral { token, .. } => token.to_string(), // Updated
         }
     }
     fn string(&self) -> String {
@@ -125,7 +121,7 @@ impl Node for Expression {
                 let args_str: Vec<String> = arguments.iter().map(|a| a.string()).collect();
                 format!("{}.{}({})", object.string(), name.string(), args_str.join(", "))
             }
-            Expression::StringLiteral { value, .. } => value.clone(), // Return the raw string value
+            Expression::StringLiteral { value, .. } => format!("\"{}\"", value), // For string(), show quotes
         }
     }
     fn as_any(&self) -> &dyn Any { self }
@@ -142,10 +138,10 @@ pub enum Statement {
         token: Token, // The first token of the expression
         expression: Expression,
     },
-    ClassStatement { // Added
+    ClassStatement { 
         token: Token, // Token::Class
         name: Identifier,
-        methods: Vec<FunctionLiteral>, // For now, empty
+        methods: Vec<FunctionLiteral>, 
     },
     // TODO: Add other statement types like ReturnStatement
 }
@@ -153,9 +149,11 @@ pub enum Statement {
 impl Node for Statement {
     fn token_literal(&self) -> String {
         match self {
-            Statement::LetStatement { token, .. } => token.to_string(),
-            Statement::ExpressionStatement { expression, .. } => expression.token_literal(),
-            Statement::ClassStatement { token, .. } => token.to_string(),
+            Statement::LetStatement { token, .. } => token.to_string(), // Updated
+            Statement::ExpressionStatement { token, .. } => token.to_string(), // Updated (assuming this token is representative)
+                                                                                // Alternatively, could be expression.token_literal() if that's more appropriate.
+                                                                                // The prompt implies using the statement's own token if it has one.
+            Statement::ClassStatement { token, .. } => token.to_string(), // Updated
         }
     }
     fn string(&self) -> String {
@@ -174,7 +172,7 @@ impl Node for Statement {
                 out.push_str(&name.string());
                 out.push_str(" {");
                 for method in methods {
-                    out.push_str(&method.string()); // This might need refinement for pretty printing
+                    out.push_str(&method.string()); 
                 }
                 out.push_str(" }");
                 out
@@ -192,7 +190,7 @@ pub struct Program {
 impl Node for Program {
     fn token_literal(&self) -> String {
         if !self.statements.is_empty() {
-            self.statements[0].token_literal()
+            self.statements[0].token_literal() // Delegates to the first statement's token_literal
         } else {
             "".to_string()
         }
