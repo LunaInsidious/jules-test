@@ -89,7 +89,11 @@ pub enum Expression {
         token: Token, // '.' token
         object: Box<Expression>, // Receiver object
         name: Identifier, // Method name
-        arguments: Vec<Expression>, // For now, empty
+        arguments: Vec<Expression>, 
+    },
+    StringLiteral { // Added
+        token: Token, // Token::String
+        value: String,
     },
     // TODO: Add other expression types like PrefixExpression, InfixExpression
 }
@@ -105,6 +109,7 @@ impl Node for Expression {
             Expression::FunctionLiteral(fl) => fl.token_literal(),
             Expression::ClassInstantiation { token, .. } => token.to_string(),
             Expression::MethodCall { token, .. } => token.to_string(),
+            Expression::StringLiteral { token, .. } => token.to_string(), // Assuming Token::String can be stringified
         }
     }
     fn string(&self) -> String {
@@ -120,6 +125,7 @@ impl Node for Expression {
                 let args_str: Vec<String> = arguments.iter().map(|a| a.string()).collect();
                 format!("{}.{}({})", object.string(), name.string(), args_str.join(", "))
             }
+            Expression::StringLiteral { value, .. } => value.clone(), // Return the raw string value
         }
     }
     fn as_any(&self) -> &dyn Any { self }

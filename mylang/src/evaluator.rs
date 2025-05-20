@@ -134,14 +134,51 @@ fn eval_expression(expression: &Expression, env: &mut Environment) -> Option<Obj
         Expression::MethodCall(mc_expr_node) => {
             eval_method_call(mc_expr_node, env)
         }
-        // TODO: Handle string literals like `"hi"` => Some(Object::String(StringObject { value: "hi".to_string() }))
-        // For the test case, we need to be able to produce a string.
-        // Let's assume identifiers can be strings for now if they are quoted, or add string literal parsing.
-        // The test case `return "hi"` implies string literals.
-        // For now, if an Identifier "hi" is encountered, it will try to look it up.
-        // We need proper string literal support in Lexer, Parser, AST, and Object.
-        // Quick fix for the test: if identifier is "hi", return string object. This is a HACK.
-        // Proper fix requires adding String token, parsing, etc.
+        Expression::StringLiteral { value, .. } => { // Added case for StringLiteral
+            Some(Object::String(StringObject { value: value.clone() }))
+        }
+    }
+
+    #[test]
+    fn test_string_literal_evaluation() {
+        struct TestCase {
+            input: &'static str,
+            expected_value: &'static str,
+        }
+
+        let tests = vec![
+            TestCase {
+                input: r#""hello world""#,
+                expected_value: "hello world",
+            },
+            TestCase {
+                input: r#""""#, // Empty string
+                expected_value: "",
+            },
+            TestCase {
+                input: r#"let greeting = "hello"; greeting;"#,
+                expected_value: "hello",
+            },
+            // Test case to ensure the HACK for "hi" is no longer needed/interfering
+            TestCase {
+                input: r#""hi""#,
+                expected_value: "hi",
+            }
+        ];
+
+        for tt in tests {
+            match test_eval_program(tt.input) {
+                Some(Object::String(s_obj)) => {
+                    assert_eq!(s_obj.value, tt.expected_value, "Input: '{}'. Expected '{}', got '{}'", tt.input, tt.expected_value, s_obj.value);
+                }
+                Some(other_obj) => {
+                    panic!("Input: '{}'. Expected String object, got {:?} (inspect: {})", tt.input, other_obj.object_type(), other_obj.inspect());
+                }
+                None => {
+                    panic!("Input: '{}'. test_eval_program returned None.", tt.input);
+                }
+            }
+        }
     }
 }
 
@@ -233,10 +270,10 @@ fn eval_method_call(mc_expr: &MethodCall, env: &mut Environment) -> Option<Objec
 
 
 fn eval_identifier(ident: &Identifier, env: &mut Environment) -> Option<Object> {
-    // HACK for test_method_call_returns_value - "hi" string literal
-    if ident.value == "\"hi\"" { // Assuming parser produces Ident("hi") for string literal "hi"
-        return Some(Object::String(StringObject{value: "hi".to_string()}));
-    }
+    // The HACK for "hi" string literal can now be removed as StringLiterals are properly handled.
+    // if ident.value == "\"hi\"" { 
+    //     return Some(Object::String(StringObject{value: "hi".to_string()}));
+    // }
 
     match env.get(&ident.value) {
         Some(obj) => Some(obj.clone()), 

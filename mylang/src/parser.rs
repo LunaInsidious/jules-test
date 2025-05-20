@@ -51,6 +51,7 @@ impl Parser {
         p.register_prefix(mem::discriminant(&Token::Ident("".into())), Parser::parse_identifier_expression);
         p.register_prefix(mem::discriminant(&Token::Int("".into())), Parser::parse_integer_literal_expression);
         p.register_prefix(mem::discriminant(&Token::Function), Parser::parse_function_literal_expression);
+        p.register_prefix(mem::discriminant(&Token::String("".into())), Parser::parse_string_literal_expression); // Added
         // TODO: Register other prefix functions like !, -, (, if, true, false
 
         // Register infix parsing functions
@@ -422,6 +423,20 @@ impl Parser {
         }
     }
 
+    fn parse_string_literal_expression(&mut self) -> Option<Expression> {
+        match &self.cur_token {
+            Token::String(value) => Some(Expression::StringLiteral {
+                token: self.cur_token.clone(),
+                value: value.clone(),
+            }),
+            _ => {
+                // This case should ideally not be reached if called correctly by the dispatcher
+                self.errors.push(format!("Expected Token::String, got {:?}", self.cur_token));
+                None
+            }
+        }
+    }
+
     // Infix parsing functions
     fn parse_call_or_instantiation_expression(&mut self, left_expression: Expression) -> Option<Expression> {
         // cur_token is LParen. left_expression is what was before it.
@@ -631,6 +646,7 @@ impl Parser {
         else if discriminant == mem::discriminant(&Token::Class) { "Class" }
         else if discriminant == mem::discriminant(&Token::Function) { "Function" }
         else if discriminant == mem::discriminant(&Token::Dot) { "Dot" }
+        else if discriminant == mem::discriminant(&Token::String("".into())) { "String" }
         else { "UnknownTokenDiscriminant" }
     }
 
@@ -752,4 +768,37 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_string_literal_expression_parsing() {
+        let input = r#""hello world";"#;
+
+        let lexer = Lexer::new(input.to_string());
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse_program();
+        check_parser_errors(&parser);
+
+        assert_eq!(
+            program.statements.len(),
+            1,
+            "program.statements does not contain 1 statement. got={}",
+            program.statements.len()
+        );
+
+        let stmt = match program.statements.get(0) {
+            Some(s) => s,
+            None => panic!("No statement found in program."),
+        };
+
+        match stmt {
+            Statement::ExpressionStatement { expression, .. } => {
+                match expression {
+                    Expression::StringLiteral { value, .. } => {
+                        assert_eq!(value, "hello world", "StringLiteral value is not 'hello world'. got='{}'", value);
+                    }
+                    _ => panic!("Expression is not StringLiteral. got={:?}", expression),
+                }
+            }
+            _ => panic!("Statement is not ExpressionStatement. got={:?}", stmt),
+        }
+    }
 }

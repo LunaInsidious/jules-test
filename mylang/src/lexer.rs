@@ -61,6 +61,13 @@ impl Lexer {
             b'{' => Token::LBrace,
             b'}' => Token::RBrace,
             b'.' => Token::Dot,
+            b'"' => {
+                if let Some(string_val) = self.read_string() {
+                    Token::String(string_val)
+                } else {
+                    Token::Illegal // Unterminated string
+                }
+            }
             0 => Token::Eof,
             _ => {
                 if is_letter(self.ch) {
@@ -88,6 +95,26 @@ impl Lexer {
             self.read_char();
         }
         self.input[position..self.position].to_string()
+    }
+
+    // Returns Some(String) if terminated, None if unterminated (hits EOF)
+    fn read_string(&mut self) -> Option<String> {
+        let position = self.position + 1; // Start after the opening "
+        loop {
+            self.read_char();
+            if self.ch == b'"' { // Closing quote found
+                return Some(self.input[position..self.position].to_string());
+            }
+            if self.ch == 0 { // EOF reached before closing quote
+                return None; // Unterminated string
+            }
+        }
+        // Note: The loop will only exit via the conditions above.
+        // If self.ch == b'"', it returns Some(...).
+        // If self.ch == 0, it returns None.
+        // So, the code after the loop is unreachable if logic is correct.
+        // However, to satisfy compiler, if loop could somehow exit otherwise:
+        // None 
     }
 
     fn read_number(&mut self) -> String {
@@ -133,7 +160,7 @@ mod tests {
 
     #[test]
     fn test_next_token_simple() {
-        let input = "let five = 5;";
+        let input = r#"let five = 5;"#; 
         let expected_tokens = vec![
             Token::Let,
             Token::Ident("five".to_string()),
@@ -147,5 +174,77 @@ mod tests {
         let actual_tokens = lexer.lex();
 
         assert_eq!(actual_tokens, expected_tokens);
+    }
+
+    #[test]
+    fn test_string_literal_lexing() {
+        struct TestCase {
+            input: &'static str,
+            expected_tokens: Vec<Token>,
+        }
+
+        let tests = vec![
+            TestCase {
+                input: r#""hello world""#,
+                expected_tokens: vec![
+                    Token::String("hello world".to_string()),
+                    Token::Eof,
+                ],
+            },
+            TestCase {
+                input: r#""""#, // Empty string
+                expected_tokens: vec![
+                    Token::String("".to_string()),
+                    Token::Eof,
+                ],
+            },
+            TestCase {
+                input: r#""\"escaped\"""#, // "escaped" - current lexer reads \ as literal
+                expected_tokens: vec![
+                    Token::String("\"escaped\"".to_string()), 
+                    Token::Eof,
+                ],
+            },
+            TestCase {
+                input: r#""unterminated"#, // Unterminated string
+                expected_tokens: vec![
+                    Token::Illegal, // Because read_string returns None, next_token makes it Illegal
+                    Token::Eof,     // After Illegal, next call to next_token (if any) on "" would yield EOF
+                                    // The current lexer.lex() continues until explicit EOF token
+                                    // If Token::Illegal is returned, read_char() is not called again in that next_token call.
+                                    // The subsequent next_token() call in lex() will then see self.ch as 0 (EOF)
+                                    // because read_string consumed all input.
+                ],
+            },
+             TestCase { // Test case: unterminated string then more content.
+                input: r#""unterminated then space"#,
+                // Expected: Illegal (for the unterminated string part),
+                // then the lexer effectively stops or should try to recover.
+                // Current `lex()` loop:
+                // 1. next_token() on `"`: calls read_string. read_string consumes to EOF, returns None. next_token returns Illegal.
+                // 2. `lex()` loop pushes Illegal.
+                // 3. next_token() again: self.ch is 0 (EOF). next_token returns Token::Eof.
+                // 4. `lex()` loop pushes Eof and breaks.
+                // So, the " then space" part is never tokenized. This is acceptable for current error handling.
+                expected_tokens: vec![
+                    Token::Illegal,
+                    Token::Eof,
+                ],
+            },
+        ];
+
+        for tt in tests {
+            let mut lexer = Lexer::new(tt.input.to_string());
+            let mut actual_tokens = Vec::new();
+            loop {
+                let tok = lexer.next_token();
+                let is_eof = tok == Token::Eof;
+                actual_tokens.push(tok);
+                if is_eof {
+                    break;
+                }
+            }
+            assert_eq!(actual_tokens, tt.expected_tokens, "Input: '{}'", tt.input);
+        }
     }
 }

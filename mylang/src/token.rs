@@ -1,5 +1,5 @@
 #[derive(Debug, PartialEq, Clone)]
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum Token {
     Illegal,
     Eof,
@@ -17,4 +17,5 @@ pub enum Token {
     Let,
     Class, // New token for 'class' keyword
     Dot,   // New token for '.' operator
+    String(String), // For string literals
 }
