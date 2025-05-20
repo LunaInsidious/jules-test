@@ -4,23 +4,38 @@ use crate::token::Token;
 use std::mem;
 use std::collections::HashMap;
 
-// Precedence levels for operators
-#[derive(PartialEq, PartialOrd, Clone, Copy, Debug)]
+// Precedence levels for operators (Step 1 - confirm/update)
+#[derive(PartialEq, PartialOrd, Debug, Clone, Copy)]
 enum Precedence {
     Lowest,
-    Equals,      // ==
-    LessGreater, // > or <
-    Sum,         // +
-    Product,     // *
+    Equals,      // ==, !=
+    LessGreater, // >, <, >=, <=
+    Sum,         // +, -
+    Product,     // *, /, %
     Prefix,      // -X or !X
-    Call,        // myFunction(X) or MyClass()
-    Index,       // array[index]
+    Call,        // myFunction(X)
+    Index,       // array[index] (Future)
     Dot,         // object.method
 }
 
 // Define function types for Pratt parsing
-type PrefixParseFn = fn(&mut Parser) -> Option<Expression>;
-type InfixParseFn = fn(&mut Parser, Expression) -> Option<Expression>;
+type PrefixParseFn = fn(&mut Parser) -> Option<Expression>; 
+// InfixParseFn now takes Box<Expression> as its left argument and returns Option<Box<Expression>>
+type InfixParseFn = fn(&mut Parser, Box<Expression>) -> Option<Box<Expression>>;
+
+// Helper function to map tokens to precedence (Step 1)
+fn token_to_precedence(token: &Token) -> Precedence {
+    match token {
+        Token::Eq | Token::NotEq => Precedence::Equals,
+        Token::LT | Token::GT | Token::LTEq | Token::GTEq => Precedence::LessGreater,
+        Token::Plus | Token::Minus => Precedence::Sum,
+        Token::Slash | Token::Asterisk | Token::Percent => Precedence::Product,
+        Token::LParen => Precedence::Call,
+        Token::Dot => Precedence::Dot,
+        // Token::LBracket => Precedence::Index, // Future
+        _ => Precedence::Lowest,
+    }
+}
 
 pub struct Parser {
     lexer: Lexer,
@@ -30,7 +45,7 @@ pub struct Parser {
 
     prefix_parse_fns: HashMap<mem::Discriminant<Token>, PrefixParseFn>,
     infix_parse_fns: HashMap<mem::Discriminant<Token>, InfixParseFn>,
-    precedences: HashMap<mem::Discriminant<Token>, Precedence>,
+    // precedences HashMap is removed (Step 1)
 }
 
 impl Parser {
@@ -44,25 +59,32 @@ impl Parser {
             errors: Vec::new(),
             prefix_parse_fns: HashMap::new(),
             infix_parse_fns: HashMap::new(),
-            precedences: HashMap::new(),
+            // precedences: HashMap::new(), // Removed
         };
 
         // Register prefix parsing functions
         p.register_prefix(mem::discriminant(&Token::Ident("".into())), Parser::parse_identifier_expression);
         p.register_prefix(mem::discriminant(&Token::Int("".into())), Parser::parse_integer_literal_expression);
         p.register_prefix(mem::discriminant(&Token::Function), Parser::parse_function_literal_expression);
-        p.register_prefix(mem::discriminant(&Token::String("".into())), Parser::parse_string_literal_expression); // Added
-        // TODO: Register other prefix functions like !, -, (, if, true, false
+        p.register_prefix(mem::discriminant(&Token::String("".into())), Parser::parse_string_literal_expression);
+        // TODO: Register prefix functions for Token::Bang, Token::Minus (for PrefixExpression)
 
-        // Register infix parsing functions
+        // Register infix parsing functions (Step 2)
         p.register_infix(mem::discriminant(&Token::LParen), Parser::parse_call_or_instantiation_expression);
         p.register_infix(mem::discriminant(&Token::Dot), Parser::parse_dot_expression);
-
-
-        // Define precedences
-        p.precedences.insert(mem::discriminant(&Token::LParen), Precedence::Call);
-        p.precedences.insert(mem::discriminant(&Token::Dot), Precedence::Dot);
-        // Add other precedences: +, -, *, /, ==, !=, <, >
+        
+        // Register new infix operators
+        p.register_infix(mem::discriminant(&Token::Plus), Parser::parse_infix_expression);
+        p.register_infix(mem::discriminant(&Token::Minus), Parser::parse_infix_expression);
+        p.register_infix(mem::discriminant(&Token::Slash), Parser::parse_infix_expression);
+        p.register_infix(mem::discriminant(&Token::Asterisk), Parser::parse_infix_expression);
+        p.register_infix(mem::discriminant(&Token::Percent), Parser::parse_infix_expression);
+        p.register_infix(mem::discriminant(&Token::Eq), Parser::parse_infix_expression);
+        p.register_infix(mem::discriminant(&Token::NotEq), Parser::parse_infix_expression);
+        p.register_infix(mem::discriminant(&Token::LT), Parser::parse_infix_expression);
+        p.register_infix(mem::discriminant(&Token::GT), Parser::parse_infix_expression);
+        p.register_infix(mem::discriminant(&Token::LTEq), Parser::parse_infix_expression);
+        p.register_infix(mem::discriminant(&Token::GTEq), Parser::parse_infix_expression);
         
         p
     }
@@ -75,13 +97,18 @@ impl Parser {
         self.infix_parse_fns.insert(token_type_disc, func);
     }
 
+    // Helper methods for precedence using token_to_precedence (Step 5)
     fn peek_precedence(&self) -> Precedence {
-        self.precedences.get(&mem::discriminant(&self.peek_token)).cloned().unwrap_or(Precedence::Lowest)
+        token_to_precedence(&self.peek_token)
     }
 
-    #[allow(dead_code)] 
     fn cur_precedence(&self) -> Precedence {
-        self.precedences.get(&mem::discriminant(&self.cur_token)).cloned().unwrap_or(Precedence::Lowest)
+        token_to_precedence(&self.cur_token)
+    }
+    
+    // Helper to check if peek_token is Semicolon (Step 5)
+    fn peek_token_is_semicolon(&self) -> bool {
+        self.peek_token_is(Token::Semicolon)
     }
 
     fn next_token(&mut self) {
@@ -95,10 +122,6 @@ impl Parser {
             if let Some(stmt) = self.parse_statement() {
                 program.statements.push(stmt);
             } else {
-                // If parse_statement returns None, it means an error likely occurred,
-                // or it's an unimplemented path. To prevent infinite loops on some errors,
-                // we advance the token. The statement parser should ideally consume tokens
-                // correctly or report errors that halt parsing if needed.
                 self.next_token();
             }
         }
@@ -109,13 +132,12 @@ impl Parser {
         match self.cur_token {
             Token::Let => self.parse_let_statement(),
             Token::Class => self.parse_class_statement(),
-            // TODO: Token::Return => self.parse_return_statement(),
             _ => self.parse_expression_statement(),
         }
     }
     
     fn parse_function_literal(&mut self, is_method: bool) -> Option<FunctionLiteral> {
-        let fn_token = self.cur_token.clone(); // Token::Function
+        let fn_token = self.cur_token.clone(); 
     
         let name = if is_method {
             if !self.expect_peek_discriminant(mem::discriminant(&Token::Ident("".into()))) {
@@ -124,13 +146,11 @@ impl Parser {
             }
             match self.cur_token.clone() {
                 Token::Ident(val) => Some(val),
-                _ => return None, // Should not happen
+                _ => return None, 
             }
         } else {
-            // For standalone function expressions, a name might be optional or handled differently
-            // For now, methods MUST have a name. Standalone anonymous functions not supported yet.
             if self.peek_token_is_discriminant(mem::discriminant(&Token::Ident("".into()))) {
-                 self.next_token(); // Consume optional name for now
+                 self.next_token(); 
                  match self.cur_token.clone() {
                     Token::Ident(val) => Some(val),
                     _ => return None, 
@@ -145,7 +165,6 @@ impl Parser {
             return None;
         }
     
-        // TODO: Parse parameters here. For now, parameters list is empty.
         let parameters = self.parse_function_parameters()?;
     
         if !self.expect_peek(Token::LBrace) {
@@ -158,9 +177,6 @@ impl Parser {
             None => return None,
         };
         
-        // parse_block_statement should consume the RBrace.
-        // self.next_token(); // Consume RBrace from block, cur_token is now RBrace
-    
         Some(FunctionLiteral {
             token: fn_token,
             parameters,
@@ -169,7 +185,6 @@ impl Parser {
         })
     }
 
-    // Wrapper for parse_function_literal to be used as a prefix parse function
     fn parse_function_literal_expression(&mut self) -> Option<Expression> {
         self.parse_function_literal(false).map(Expression::FunctionLiteral)
     }
@@ -177,14 +192,11 @@ impl Parser {
 
     fn parse_function_parameters(&mut self) -> Option<Vec<Identifier>> {
         let mut identifiers = Vec::new();
-
         if self.peek_token_is(Token::RParen) {
-            self.next_token(); // consume RParen
+            self.next_token(); 
             return Some(identifiers);
         }
-
-        self.next_token(); // consume LParen or Comma
-
+        self.next_token(); 
         match &self.cur_token {
             Token::Ident(name_val) => {
                 identifiers.push(Identifier { token: self.cur_token.clone(), value: name_val.clone() });
@@ -194,10 +206,9 @@ impl Parser {
                 return None;
             }
         }
-
         while self.peek_token_is(Token::Comma) {
-            self.next_token(); // consume Comma
-            self.next_token(); // consume actual Ident token
+            self.next_token(); 
+            self.next_token(); 
              match &self.cur_token {
                 Token::Ident(name_val) => {
                     identifiers.push(Identifier { token: self.cur_token.clone(), value: name_val.clone() });
@@ -208,64 +219,48 @@ impl Parser {
                 }
             }
         }
-
         if !self.expect_peek(Token::RParen) {
             self.peek_error(Token::RParen);
             return None;
         }
-        // expect_peek consumed RParen
-
         Some(identifiers)
     }
 
 
     fn parse_class_statement(&mut self) -> Option<Statement> {
         let class_token = self.cur_token.clone(); 
-
         if !self.expect_peek_discriminant(mem::discriminant(&Token::Ident("".into()))) {
             self.peek_error_discriminant(mem::discriminant(&Token::Ident("".into())));
             return None;
         }
-
         let name = match self.cur_token.clone() {
             Token::Ident(val) => Identifier { token: self.cur_token.clone(), value: val },
             _ => return None, 
         };
-
         if !self.expect_peek(Token::LBrace) {
             self.peek_error(Token::LBrace);
             return None;
         }
-        
-        self.next_token(); // Consume LBrace, cur_token is now LBrace.
-
+        self.next_token(); 
         let mut methods = Vec::new();
         while !self.cur_token_is(Token::RBrace) && !self.cur_token_is(Token::Eof) {
             if self.cur_token_is(Token::Function) {
-                if let Some(method_fn) = self.parse_function_literal(true) { // true for is_method
+                if let Some(method_fn) = self.parse_function_literal(true) { 
                     methods.push(method_fn);
                 } else {
-                    // Error parsing method, stop class parsing or try to recover
                     self.errors.push("Failed to parse method in class".to_string());
-                    // To prevent infinite loop if parse_function_literal didn't advance:
-                    // self.next_token(); // This might skip valid tokens if recovery is poor.
-                    // For now, let's assume parse_function_literal advances on its own or we stop.
-                    return None; // Stop parsing class on method error for now
+                    return None; 
                 }
             } else {
                 self.errors.push(format!("Expected 'fn' for method or '}}' to end class, got {:?}", self.cur_token));
-                self.next_token(); // Skip unexpected token
-                // return None; // Or try to recover by skipping tokens until 'fn' or '}'
+                self.next_token(); 
             }
         }
-
         if !self.cur_token_is(Token::RBrace) { 
             self.errors.push(format!("Expected '}}' for class {}, got {:?}", name.value, self.cur_token));
             return None;
         }
-        
-        self.next_token(); // Consume RBrace
-
+        self.next_token(); 
         Some(Statement::ClassStatement {
             token: class_token,
             name,
@@ -276,12 +271,10 @@ impl Parser {
 
     fn parse_let_statement(&mut self) -> Option<Statement> {
         let let_token = self.cur_token.clone(); 
-
         if !self.expect_peek_discriminant(mem::discriminant(&Token::Ident("".into()))) {
             self.peek_error_discriminant(mem::discriminant(&Token::Ident("".into())));
             return None;
         }
-
         let name = match self.cur_token.clone() {
             Token::Ident(ident_val) => Identifier {
                 token: self.cur_token.clone(),
@@ -289,34 +282,22 @@ impl Parser {
             },
             _ => return None, 
         };
-
         if !self.expect_peek(Token::Assign) {
             self.peek_error(Token::Assign);
             return None;
         }
-        
-        self.next_token(); // Consume '='
-
+        self.next_token(); 
         let value_expression = match self.parse_expression(Precedence::Lowest) {
-            Some(expr) => expr,
+            Some(expr) => *expr, // Unbox here
             None => {
                 self.errors.push("Failed to parse expression in let statement".to_string());
                 return None;
             }
         };
-
         if self.peek_token_is(Token::Semicolon) {
             self.next_token(); 
         }
-        // self.next_token(); // Let statement does not consume the token after expression/semicolon
-                           // This is handled by the main loop in parse_program or by parse_expression_statement
-        // After parse_expression, cur_token is the last token of value_expression.
-        if self.peek_token_is(Token::Semicolon) {
-            self.next_token(); // Consume ';'. cur_token is now ';'.
-        }
-        // Advance past the statement.
         self.next_token(); 
-
         Some(Statement::LetStatement {
             token: let_token,
             name,
@@ -326,81 +307,52 @@ impl Parser {
 
     fn parse_expression_statement(&mut self) -> Option<Statement> {
         let stmt_token = self.cur_token.clone();
-        
-        let expression_opt = self.parse_expression(Precedence::Lowest);
-        
+        let expression = match self.parse_expression(Precedence::Lowest) {
+            Some(expr) => *expr, // Unbox here
+            None => return None, 
+        };
         if self.peek_token_is(Token::Semicolon) {
             self.next_token(); 
         }
-        // self.next_token(); // Expression statement also does not consume the token after expression/semicolon
-
-        match expression_opt {
-            Some(expression) => {
-                // Statement parser should advance cur_token to the next token *after* this statement.
-                self.next_token(); 
-                Some(Statement::ExpressionStatement {
-                    token: stmt_token, 
-                    expression,
-                })
-            }
-            None => None
-        }
+        self.next_token(); 
+        Some(Statement::ExpressionStatement {
+            token: stmt_token, 
+            expression,
+        })
     }
     
-    fn parse_expression(&mut self, precedence: Precedence) -> Option<Expression> {
+    // parse_expression now returns Option<Box<Expression>> (Step 4)
+    fn parse_expression(&mut self, precedence: Precedence) -> Option<Box<Expression>> {
         let prefix_fn_opt = self.prefix_parse_fns.get(&mem::discriminant(&self.cur_token)).copied();
 
         let mut left_exp_opt = match prefix_fn_opt {
-            Some(prefix_fn) => prefix_fn(self),
+            Some(prefix_fn) => prefix_fn(self).map(Box::new), // Box the result of prefix_fn
             None => {
                 self.no_prefix_parse_fn_error();
                 return None;
             }
         };
         
-        // After prefix parsing, cur_token is the last token of the prefix expression.
-        // The loop for infix parsing should check peek_token.
-
-        while !self.peek_token_is(Token::Semicolon) && precedence < self.peek_precedence() {
-             // Check current token, not peek, because prefix parsing already advanced.
-             // No, this is wrong. peek_precedence should be for peek_token.
-             // The loop condition should be `precedence < self.peek_precedence()`
-             // And inside, we use `self.peek_token` for the infix operator.
-             //
-             // Let's correct the flow:
-             // 1. Parse prefix expression. `cur_token` is its last token.
-             // 2. Loop while `peek_token` is an infix operator of higher precedence.
-             // 3. Inside loop: `next_token()` to make operator `cur_token`.
-             // 4. `next_token()` again to make RHS first token `cur_token`.
-             // 5. Call infix parse function.
-
-            // Correction: The loop condition `precedence < self.peek_precedence()` is correct.
-            // Inside the loop, if we find an infix operator on `peek_token`, we then call `next_token()`
-            // to make it `cur_token`, then call the infix parse function.
-            // The infix parse function then parses the right-hand side.
-
+        // Pratt parser loop for infix expressions (Step 4)
+        while !self.peek_token_is_semicolon() && precedence < self.peek_precedence() {
             let infix_fn_opt = self.infix_parse_fns.get(&mem::discriminant(&self.peek_token)).copied();
             
-            if infix_fn_opt.is_none() {
+            if infix_fn_opt.is_none() { 
                 return left_exp_opt; 
             }
             
-            self.next_token(); // Consume the infix operator, peek_token is now the operator, make it cur_token.
+            self.next_token(); // Consume the infix operator, making it cur_token.
             
-            // Check if left_exp_opt is Some before unwrapping
-             if left_exp_opt.is_none() { return None; } // Should not happen if prefix parsing succeeded.
+            if left_exp_opt.is_none() { 
+                self.errors.push(format!("Expected an expression before infix operator {}, but found None.", self.cur_token.to_string()));
+                return None; 
+            }
 
             left_exp_opt = infix_fn_opt.unwrap()(self, left_exp_opt.unwrap()); 
                                                                     
-            if left_exp_opt.is_none() { return None; } 
-            
-            // After an infix operation, the infix_parse_fn (e.g. parse_dot_expression, parse_call_or_instantiation_expression)
-            // is responsible for consuming all tokens related to the infix operation, including the RHS and any closing tokens.
-            // The cur_token should be the last token of the expression parsed by the infix_fn.
-            // The loop in parse_expression will then call next_token() at the start of the next iteration IF it continues.
-            // So, the extra self.next_token() here was likely incorrect.
-            // Removing it. The main loop of parse_expression or its callers should handle advancing.
-            // self.next_token(); // REMOVED THIS LINE
+            if left_exp_opt.is_none() { 
+                return None; 
+            } 
         }
         left_exp_opt
     }
@@ -441,128 +393,113 @@ impl Parser {
                 value: value.clone(),
             }),
             _ => {
-                // This case should ideally not be reached if called correctly by the dispatcher
                 self.errors.push(format!("Expected Token::String, got {:?}", self.cur_token));
                 None
             }
         }
     }
 
-    // Infix parsing functions
-    fn parse_call_or_instantiation_expression(&mut self, left_expression: Expression) -> Option<Expression> {
-        // cur_token is LParen. left_expression is what was before it.
-        let arguments = self.parse_expression_list(Token::RParen)?;
-        // parse_expression_list consumes up to and including RParen.
-        // So cur_token is now RParen.
+    // Infix parsing function for common infix operators (Step 3)
+    fn parse_infix_expression(&mut self, left: Box<Expression>) -> Option<Box<Expression>> {
+        let operator_token = self.cur_token.clone(); 
+        let operator_str = self.cur_token.to_string(); 
+        let current_precedence = self.cur_precedence(); 
 
-        match left_expression {
-            Expression::Identifier(ident_node) => { // Could be ClassInstantiation or FunctionCall
-                // For this subtask, assume Identifier() is ClassInstantiation.
-                // A more robust solution would check if 'ident_node.value' is a known class name.
-                // Or, have separate parsing paths if grammar allows distinguishing.
-                // For now, if it's an Identifier, we treat it as potential class instantiation.
-                 Some(Expression::ClassInstantiation {
+        self.next_token(); // Consume the operator token
+
+        let right_opt = self.parse_expression(current_precedence); 
+        
+        if right_opt.is_none() {
+            self.errors.push(format!("Expected expression on the right side of operator {}", operator_str));
+            return None;
+        }
+        let right = right_opt.unwrap(); 
+
+        Some(Box::new(Expression::InfixExpression {
+            token: operator_token,
+            left, 
+            operator: operator_str,
+            right, 
+        }))
+    }
+    
+    // parse_call_or_instantiation_expression now takes and returns Box<Expression>
+    fn parse_call_or_instantiation_expression(&mut self, left_expression: Box<Expression>) -> Option<Box<Expression>> {
+        let arguments = self.parse_expression_list(Token::RParen)?;
+        match *left_expression { 
+            Expression::Identifier(ident_node) => { 
+                 Some(Box::new(Expression::ClassInstantiation { 
                     token: ident_node.token.clone(), 
-                    name: ident_node.clone(),
+                    name: ident_node, 
                     arguments, 
-                })
-                // TODO: Later, differentiate true function calls like `myFunc()` from `MyClass()`
+                }))
             }
             _ => {
-                // TODO: Handle other callable expressions e.g. (fn(){})()
                 self.errors.push(format!("Calling non-identifier/non-function not yet supported. Got: {:?}", left_expression));
                 None
             }
         }
     }
 
-    fn parse_dot_expression(&mut self, left_expression: Expression) -> Option<Expression> {
-        // cur_token is Token::Dot. left_expression is the object.
+    // parse_dot_expression now takes and returns Box<Expression>
+    fn parse_dot_expression(&mut self, left_expression: Box<Expression>) -> Option<Box<Expression>> {
         let dot_token = self.cur_token.clone();
-    
         if !self.expect_peek_discriminant(mem::discriminant(&Token::Ident("".into()))) {
             self.peek_error_discriminant(mem::discriminant(&Token::Ident("".into())));
             return None;
         }
-        // cur_token is now the Identifier (method name)
         let method_name = match self.cur_token.clone() {
             Token::Ident(val) => Identifier { token: self.cur_token.clone(), value: val },
-            _ => return None, // Should not happen
+            _ => return None, 
         };
-    
         if !self.expect_peek(Token::LParen) {
-            // This means it's potentially a field access like `object.field`
-            // For this subtask, field access is an error or not implemented.
             self.errors.push(format!("Field access (e.g. object.field) is not yet supported. Expected '(' for method call after '.{}'.", method_name.value));
             return None;
         }
-        // cur_token is now LParen
-    
         let arguments = self.parse_expression_list(Token::RParen)?;
-        // cur_token is now RParen after parse_expression_list
-    
-        Some(Expression::MethodCall {
+        Some(Box::new(Expression::MethodCall {
             token: dot_token,
-            object: Box::new(left_expression),
+            object: left_expression,
             name: method_name,
             arguments,
-        })
+        }))
     }
     
-    // Renamed from parse_call_arguments to parse_expression_list for generality
-    fn parse_expression_list(&mut self, end_token: Token) -> Option<Vec<Expression>> {
+    // parse_expression_list now unboxes expressions from parse_expression (Step 4)
+    fn parse_expression_list(&mut self, end_token_type: Token) -> Option<Vec<Expression>> { 
         let mut list = Vec::new();
-
-        if self.peek_token_is(end_token.clone()) { 
+        if self.peek_token_is(end_token_type.clone()) { 
             self.next_token(); 
             return Some(list); 
         }
-
-        self.next_token(); // Consume LParen (or Comma for subsequent args)
-        
-        if let Some(exp) = self.parse_expression(Precedence::Lowest) {
+        self.next_token(); 
+        if let Some(exp) = self.parse_expression(Precedence::Lowest).map(|boxed_exp| *boxed_exp) { 
             list.push(exp);
         } else {
-            self.errors.push("Failed to parse expression in list".to_string());
+            self.errors.push("Failed to parse first expression in list".to_string());
             return None; 
         }
-        
-        // After parsing the first expression, cur_token is its last token.
-        // We need to advance to check for comma.
-        self.next_token();
-
-
-        while self.cur_token_is(Token::Comma) { // Check cur_token for Comma
-            self.next_token(); // Consume Comma, cur_token is now the start of the next expression
-            if let Some(exp) = self.parse_expression(Precedence::Lowest) {
+        while self.peek_token_is(Token::Comma) {
+            self.next_token(); 
+            self.next_token(); 
+            if let Some(exp) = self.parse_expression(Precedence::Lowest).map(|boxed_exp| *boxed_exp) { 
                 list.push(exp);
             } else {
                  self.errors.push("Failed to parse expression after comma in list".to_string());
                 return None; 
             }
-            // Advance after parsing the expression in the list
-            self.next_token();
         }
-
-        if !self.cur_token_is(end_token.clone()) { // After loop, check cur_token is end_token
-            self.errors.push(format!("Expected {:?} to end expression list, got {:?}", end_token, self.cur_token));
+        if !self.expect_peek(end_token_type.clone()) { 
+            self.peek_error(end_token_type); 
             return None;
         }
-        // self.next_token(); // Consume the end_token - This is done by the caller of parse_expression_list (e.g. parse_call_or_instantiation)
-                           // No, parse_expression_list itself should consume the end_token.
-                           // The caller (parse_call_or_instantiation / parse_dot_expression) expects cur_token
-                           // to be the end_token (RParen) when this function returns.
-
         Some(list)
     }
-
-
+    
     fn parse_block_statement(&mut self) -> Option<BlockStatement> {
         let block_token = self.cur_token.clone(); 
         let mut statements = Vec::new();
-
-        self.next_token(); // Consume '{'
-
+        self.next_token(); 
         while !self.cur_token_is(Token::RBrace) && !self.cur_token_is(Token::Eof) {
             if let Some(stmt) = self.parse_statement() {
                 statements.push(stmt);
@@ -570,13 +507,11 @@ impl Parser {
                  self.next_token(); 
             }
         }
-
         if !self.cur_token_is(Token::RBrace) {
             self.errors.push(format!("Expected '}}' for block statement, got {:?}", self.cur_token));
             return None; 
         }
-        self.next_token(); // Consume '}'
-
+        self.next_token(); 
         Some(BlockStatement {
             token: block_token,
             statements,
@@ -658,6 +593,7 @@ impl Parser {
         else if discriminant == mem::discriminant(&Token::Function) { "Function" }
         else if discriminant == mem::discriminant(&Token::Dot) { "Dot" }
         else if discriminant == mem::discriminant(&Token::String("".into())) { "String" }
+        // TODO: Add new operators here for error messages if needed
         else { "UnknownTokenDiscriminant" }
     }
 

@@ -11,7 +11,18 @@ pub enum Token {
     // Operators
     Assign,
     Plus,
-    // TODO: Add Minus, Bang, Asterisk, Slash, Lt, Gt, Eq, NotEq
+    Minus,
+    Bang,
+    Asterisk,
+    Slash,
+    Percent,
+    LT, // <
+    GT, // >
+    Eq, // ==
+    NotEq, // !=
+    LTEq, // <=
+    GTEq, // >=
+    // TODO: Add other operators if needed
 
     // Delimiters
     Comma,
@@ -42,6 +53,17 @@ impl fmt::Display for Token {
                                                     // But the prompt example `Token::String(s) -> s` suggests the content.
             Token::Assign => write!(f, "="),
             Token::Plus => write!(f, "+"),
+            Token::Minus => write!(f, "-"),
+            Token::Bang => write!(f, "!"),
+            Token::Asterisk => write!(f, "*"),
+            Token::Slash => write!(f, "/"),
+            Token::Percent => write!(f, "%"),
+            Token::LT => write!(f, "<"),
+            Token::GT => write!(f, ">"),
+            Token::Eq => write!(f, "=="),
+            Token::NotEq => write!(f, "!="),
+            Token::LTEq => write!(f, "<="),
+            Token::GTEq => write!(f, ">="),
             Token::Comma => write!(f, ","),
             Token::Semicolon => write!(f, ";"),
             Token::LParen => write!(f, "("),

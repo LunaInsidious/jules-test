@@ -95,17 +95,24 @@ pub enum Expression {
         token: Token, // Token::String
         value: String,
     },
+    InfixExpression { // Added
+        token: Token, // The operator token, e.g. Token::Plus
+        left: Box<Expression>,
+        operator: String, // The operator as a string, e.g. "+"
+        right: Box<Expression>,
+    },
 }
 
 impl Node for Expression {
     fn token_literal(&self) -> String {
         match self {
-            Expression::Identifier(ident) => ident.token.to_string(), // Updated: access token from Identifier
-            Expression::IntegerLiteral { token, .. } => token.to_string(), // Updated
-            Expression::FunctionLiteral(fl) => fl.token.to_string(), // Updated: access token from FunctionLiteral
-            Expression::ClassInstantiation { token, .. } => token.to_string(), // Updated
-            Expression::MethodCall { token, .. } => token.to_string(), // Updated
-            Expression::StringLiteral { token, .. } => token.to_string(), // Updated
+            Expression::Identifier(ident) => ident.token.to_string(), 
+            Expression::IntegerLiteral { token, .. } => token.to_string(), 
+            Expression::FunctionLiteral(fl) => fl.token.to_string(), 
+            Expression::ClassInstantiation { token, .. } => token.to_string(), 
+            Expression::MethodCall { token, .. } => token.to_string(), 
+            Expression::StringLiteral { token, .. } => token.to_string(), 
+            Expression::InfixExpression { token, .. } => token.to_string(), // Added
         }
     }
     fn string(&self) -> String {
@@ -121,7 +128,10 @@ impl Node for Expression {
                 let args_str: Vec<String> = arguments.iter().map(|a| a.string()).collect();
                 format!("{}.{}({})", object.string(), name.string(), args_str.join(", "))
             }
-            Expression::StringLiteral { value, .. } => format!("\"{}\"", value), // For string(), show quotes
+            Expression::StringLiteral { value, .. } => format!("\"{}\"", value), 
+            Expression::InfixExpression { left, operator, right, .. } => { // Added
+                format!("({} {} {})", left.string(), operator, right.string())
+            }
         }
     }
     fn as_any(&self) -> &dyn Any { self }

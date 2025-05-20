@@ -52,8 +52,43 @@ impl Lexer {
         self.skip_whitespace();
 
         let tok = match self.ch {
-            b'=' => Token::Assign,
+            b'=' => {
+                if self.peek_char() == b'=' {
+                    self.read_char(); // Consume the second '='
+                    Token::Eq
+                } else {
+                    Token::Assign
+                }
+            }
             b'+' => Token::Plus,
+            b'-' => Token::Minus,
+            b'!' => {
+                if self.peek_char() == b'=' {
+                    self.read_char(); // Consume the '='
+                    Token::NotEq
+                } else {
+                    Token::Bang
+                }
+            }
+            b'*' => Token::Asterisk,
+            b'/' => Token::Slash,
+            b'%' => Token::Percent,
+            b'<' => {
+                if self.peek_char() == b'=' {
+                    self.read_char(); // Consume the '='
+                    Token::LTEq
+                } else {
+                    Token::LT
+                }
+            }
+            b'>' => {
+                if self.peek_char() == b'=' {
+                    self.read_char(); // Consume the '='
+                    Token::GTEq
+                } else {
+                    Token::GT
+                }
+            }
             b',' => Token::Comma,
             b';' => Token::Semicolon,
             b'(' => Token::LParen,

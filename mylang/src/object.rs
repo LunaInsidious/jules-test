@@ -15,6 +15,7 @@ pub enum ObjectType {
     ReturnValueObj, // Will be needed soon
     ErrorObj,       // For error handling
     StringObj,      // For string literals
+    BooleanObj,     // Added for Boolean objects
 }
 
 impl fmt::Display for ObjectType {
@@ -28,6 +29,7 @@ impl fmt::Display for ObjectType {
             ObjectType::ReturnValueObj => write!(f, "RETURN_VALUE"),
             ObjectType::ErrorObj => write!(f, "ERROR"),
             ObjectType::StringObj => write!(f, "STRING"),
+            ObjectType::BooleanObj => write!(f, "BOOLEAN"), // Added
         }
     }
 }
@@ -85,6 +87,12 @@ pub struct StringObject {
     pub value: String,
 }
 
+// Define BooleanObject struct (Step 2)
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub struct BooleanObject {
+    pub value: bool,
+}
+
 
 #[derive(Debug, Clone, PartialEq)] 
 pub enum Object {
@@ -93,9 +101,10 @@ pub enum Object {
     Class(Rc<Class>),          
     Instance(Rc<Instance>),    
     Function(Rc<FunctionObject>),
-    ReturnValue(Box<Object>), // To wrap return values
-    Error(String),            // For error messages
-    String(StringObject),     // For string literals
+    ReturnValue(Box<Object>), 
+    Error(String),            
+    String(StringObject),     
+    Boolean(BooleanObject), // Added Boolean variant (Step 3)
 }
 
 impl Object {
@@ -104,7 +113,7 @@ impl Object {
             Object::Integer(i) => format!("{}", i.value),
             Object::Null => "null".to_string(),
             Object::Class(c) => format!("<class {}>", c.name),
-            Object::Instance(i) => format!("<instance of {}>", i.class.name), // Updated
+            Object::Instance(i) => format!("<instance of {}>", i.class.name), 
             Object::Function(f) => {
                 let params: Vec<String> = f.parameters.iter().map(|p| p.value.clone()).collect();
                 let name_prefix = f.name.as_ref().map_or_else(|| "fn".to_string(), |n| format!("fn {}", n));
@@ -113,6 +122,7 @@ impl Object {
             Object::ReturnValue(val) => format!("ReturnValue({})", val.inspect()),
             Object::Error(msg) => format!("Error: {}", msg),
             Object::String(s) => format!("\"{}\"", s.value),
+            Object::Boolean(b) => b.value.to_string(), // Updated for Boolean (Step 4)
         }
     }
 
@@ -126,6 +136,7 @@ impl Object {
             Object::ReturnValue(_) => ObjectType::ReturnValueObj,
             Object::Error(_) => ObjectType::ErrorObj,
             Object::String(_) => ObjectType::StringObj,
+            Object::Boolean(_) => ObjectType::BooleanObj, // Updated for Boolean (Step 5)
         }
     }
 }
